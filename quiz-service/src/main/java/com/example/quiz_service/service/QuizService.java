@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cloud.client.circuitbreaker.CircuitBreaker;
+import org.springframework.cloud.client.circuitbreaker.CircuitBreakerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,13 @@ public class QuizService {
     @Autowired
     QuizRepo quizRepo;
 
+    @Autowired
+    CircuitBreakerFactory circuitBreakerFactory;
+
+    private CircuitBreaker breaker(String id) {
+        return circuitBreakerFactory.create(id);
+    }
+
     public ResponseEntity<String> createQuiz(String category, Integer numQ, String title) {
 
         if (category == null || category.trim().isEmpty()) {
@@ -34,16 +43,19 @@ public class QuizService {
             return new ResponseEntity<>("numQ must be a positive number", HttpStatus.BAD_REQUEST);
         }
 
-        ResponseEntity<List<Integer>> response = quizInterface.generateQuiz(category.trim(), numQ);
+        List<Integer> questions = breaker("generateQuiz")
+                .run(() -> quizInterface.generateQuiz(category.trim(), numQ).getBody(), t -> null);
 
-        if (response.getBody() == null || response.getBody().isEmpty()) {
+        if (questions == null) {
+            return new ResponseEntity<>("Question service unavailable, please try again later", HttpStatus.SERVICE_UNAVAILABLE);
+        }
+
+        if (questions.isEmpty()) {
             return new ResponseEntity<>(
                     "No questions found for category: " + category,
                     HttpStatus.NOT_FOUND
             );
         }
-
-        List<Integer> questions = response.getBody();
         
         Quiz quiz = new Quiz();
         quiz.setTitle(title);
@@ -61,8 +73,12 @@ public class QuizService {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
 
-        List<Integer> questionIds = quiz.get().getQuestionIds();
-        List<QuestionWrapper> questions = quizInterface.getQuestions(questionIds).getBody();
+        List<QuestionWrapper> questions = breaker("getQuestions")
+                .run(() -> quizInterface.getQuestions(quiz.get().getQuestionIds()).getBody(), t -> null);
+
+        if (questions == null) {
+            return new ResponseEntity<>(HttpStatus.SERVICE_UNAVAILABLE);
+        }
 
         return new ResponseEntity<>(questions, HttpStatus.OK);
     }
@@ -73,7 +89,12 @@ public class QuizService {
             return new ResponseEntity<>(HttpStatus.NOT_FOUND);
         }
 
-        Integer score = quizInterface.getScore(responses).getBody();
+        Integer score = breaker("getScore")
+                .run(() -> quizInterface.getScore(responses).getBody(), t -> null);
+
+        if (score == null) {
+            return new ResponseEntity<>(HttpStatus.SERVICE_UNAVAILABLE);
+        }
 
         return new ResponseEntity<>(score, HttpStatus.OK);
     }

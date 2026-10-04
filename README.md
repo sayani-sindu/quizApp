@@ -77,16 +77,18 @@ flowchart LR
 > export JAVA_HOME=/opt/homebrew/Cellar/openjdk@21/21.0.12.1/libexec/openjdk.jdk/Contents/Home
 > ```
 
-Start services **in dependency order** (each in its own terminal):
+Start services **in dependency order** (each in its own terminal) — the config server must start first so every other service can fetch its configuration:
 
 ```bash
-cd service-registry && ./mvnw spring-boot:run   # 8761
-cd config-server    && ./mvnw spring-boot:run   # 8888
+cd config-server    && ./mvnw spring-boot:run   # 8888  (config server)
+cd service-registry && ./mvnw spring-boot:run   # 8761  (Eureka)
 cd api-gateway      && ./mvnw spring-boot:run   # 8765
 cd question-service && ./mvnw spring-boot:run   # 8081
 cd quiz-service     && ./mvnw spring-boot:run   # 8090
-cd ai-service       && ./mvnw spring-boot:run   # 8095
+cd ai-service       && ./mvnw spring-boot:run   # 8095  (Phase 3)
 ```
+
+Configuration is centralized in `config-repo/` and served by the Config Server. Override the location with `CONFIG_REPO_LOCATION` if needed.
 
 Verify:
 - Eureka dashboard: http://localhost:8761 — all services registered
@@ -94,23 +96,26 @@ Verify:
 
 ## API overview
 
-Everything is reachable through the gateway (`http://localhost:8765`):
+Everything is reachable through the gateway (`http://localhost:8765`) using lowercase routes:
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/question-service/question/allQuestions` | All questions |
-| `GET` | `/question-service/question/category/{topic}` | Questions by category |
-| `POST` | `/question-service/question/add` | Add a question |
-| `POST` | `/quiz-service/quiz/create` | Create a quiz from a category |
-| `GET` | `/quiz-service/quiz/get/{id}` | Get quiz questions (no answers) |
-| `POST` | `/quiz-service/quiz/submit/{id}` | Submit answers, get score |
-| `POST` | `/ai-service/ai/generate` | AI-generated quiz questions |
-| `POST` | `/ai-service/ai/explain` | AI explanation for an answer |
+| `GET` | `/question/allQuestions` | All questions |
+| `GET` | `/question/category/{topic}` | Questions by category |
+| `POST` | `/question/add` | Add a question |
+| `POST` | `/quiz/create` | Create a quiz from a category |
+| `GET` | `/quiz/get/{id}` | Get quiz questions (no answers) |
+| `POST` | `/quiz/submit/{id}` | Submit answers, get score |
+| `POST` | `/ai/generate` | AI-generated quiz questions (Phase 3) |
+| `POST` | `/ai/explain` | AI explanation for an answer (Phase 3) |
+
+Every response includes an `X-Correlation-Id` header added by the gateway.
+Quiz → question/ai Feign calls are protected by **Resilience4j circuit breakers** (graceful 503 + auto-recovery when the downstream service returns).
 
 ## Roadmap
 
 - [x] **Phase 0** — Repo foundation, README, gitignore, push to GitHub
-- [ ] **Phase 1** — Config Server, Resilience4j, explicit gateway routes, Flyway, profiles
+- [x] **Phase 1** — Config Server, Resilience4j circuit breakers, explicit gateway routes + correlation-id, Flyway migrations, dev/prod profiles
 - [ ] **Phase 2** — Observability: OTel tracing, Prometheus metrics, Grafana, Jaeger
 - [ ] **Phase 3** — Spring AI service (Ollama): quiz generation, explanations, grading
 - [ ] **Phase 4** — RAG + pgvector semantic search + study assistant
