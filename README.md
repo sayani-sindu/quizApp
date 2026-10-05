@@ -94,6 +94,22 @@ Verify:
 - Eureka dashboard: http://localhost:8761 — all services registered
 - Health: http://localhost:8765/actuator/health
 
+## Observability
+
+Start the local observability stack (free, Docker):
+
+```bash
+docker compose up -d
+```
+
+| Tool | URL | Purpose |
+|---|---|---|
+| Jaeger | http://localhost:16686 | Distributed traces (gateway → quiz → question) |
+| Prometheus | http://localhost:9090 | Metrics scraping (`/actuator/prometheus`) |
+| Grafana | http://localhost:3000 (admin/admin) | Dashboards (Prometheus datasource pre-provisioned) |
+
+Every service exposes Actuator health and Micrometer metrics at `/actuator/health` and `/actuator/prometheus`. Traces are exported over OTLP to Jaeger, and the same trace ID follows a request across the gateway, quiz-service (including its Feign call), and question-service. Custom business metrics include `quiz_creations_total` and `quiz_submissions_total`.
+
 ## API overview
 
 Everything is reachable through the gateway (`http://localhost:8765`) using lowercase routes:
@@ -116,7 +132,7 @@ Quiz → question/ai Feign calls are protected by **Resilience4j circuit breaker
 
 - [x] **Phase 0** — Repo foundation, README, gitignore, push to GitHub
 - [x] **Phase 1** — Config Server, Resilience4j circuit breakers, explicit gateway routes + correlation-id, Flyway migrations, dev/prod profiles
-- [ ] **Phase 2** — Observability: OTel tracing, Prometheus metrics, Grafana, Jaeger
+- [x] **Phase 2** — Observability: OTel distributed tracing (Jaeger), Prometheus metrics, Grafana, custom business metrics
 - [ ] **Phase 3** — Spring AI service (Ollama): quiz generation, explanations, grading
 - [ ] **Phase 4** — RAG + pgvector semantic search + study assistant
 - [ ] **Phase 5** — Security with Keycloak (OAuth2/JWT, roles)

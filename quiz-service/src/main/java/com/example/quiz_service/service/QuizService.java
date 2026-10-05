@@ -10,6 +10,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+
 import com.example.quiz_service.feign.QuizInterface;
 import com.example.quiz_service.model.QuestionWrapper;
 import com.example.quiz_service.model.Quiz;
@@ -29,6 +32,9 @@ public class QuizService {
     @Autowired
     CircuitBreakerFactory circuitBreakerFactory;
 
+    @Autowired
+    MeterRegistry meterRegistry;
+
     private CircuitBreaker breaker(String id) {
         return circuitBreakerFactory.create(id);
     }
@@ -43,8 +49,12 @@ public class QuizService {
             return new ResponseEntity<>("numQ must be a positive number", HttpStatus.BAD_REQUEST);
         }
 
+        Timer.Sample sample = Timer.start(meterRegistry);
+
         List<Integer> questions = breaker("generateQuiz")
                 .run(() -> quizInterface.generateQuiz(category.trim(), numQ).getBody(), t -> null);
+
+        sample.stop(meterRegistry.timer("quiz.generate.duration"));
 
         if (questions == null) {
             return new ResponseEntity<>("Question service unavailable, please try again later", HttpStatus.SERVICE_UNAVAILABLE);
@@ -62,6 +72,8 @@ public class QuizService {
         quiz.setQuestionIds(questions);
 
         quizRepo.save(quiz);
+
+        meterRegistry.counter("quiz.creations", "category", category).increment();
 
         return new ResponseEntity<>("Success", HttpStatus.CREATED);
     }
@@ -95,6 +107,8 @@ public class QuizService {
         if (score == null) {
             return new ResponseEntity<>(HttpStatus.SERVICE_UNAVAILABLE);
         }
+
+        meterRegistry.counter("quiz.submissions").increment();
 
         return new ResponseEntity<>(score, HttpStatus.OK);
     }
